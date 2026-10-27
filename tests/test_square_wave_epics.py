@@ -103,6 +103,21 @@ class TestWritesTheRightRegisters:
         assert written["PULSE2_INP"] == int(SysBus.DIV2_OUTD)
         assert "DIV1_DIV" not in written
 
+    async def test_monitor_output_carries_the_same_signal(self, ca):
+        await example.main(args(monitor="OUT2_TTL"))
+
+        written = dict(ca.puts)
+        assert written["OUT1_TTL"] == int(SysBus.PULSE1)
+        assert written["OUT2_TTL"] == int(SysBus.PULSE1)
+
+    async def test_stop_clears_the_monitor_too(self, ca):
+        """Forgetting the second output leaves it running after --stop."""
+        assert await example.main(args(monitor="OUT2_TTL", stop=True)) == 0
+        assert ca.puts == [
+            ("OUT1_TTL", int(SysBus.DISCONNECT)),
+            ("OUT2_TTL", int(SysBus.DISCONNECT)),
+        ]
+
     async def test_stop_disconnects_the_output(self, ca):
         assert await example.main(args(stop=True)) == 0
         assert ca.puts == [("OUT1_TTL", int(SysBus.DISCONNECT))]

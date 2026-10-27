@@ -107,6 +107,25 @@ class TestPulseTrainRegisters:
         assert achieved["frequency_hz"] == pytest.approx(1000)
         assert achieved["duty_percent"] == pytest.approx(50.0)
 
+    def test_several_outputs_share_one_signal(self):
+        """The system bus fans out, so a monitor copy costs nothing."""
+        settings, achieved = pulse_train_registers(
+            1000, out=["OUT1_TTL", "OUT2_TTL"]
+        )
+        assert settings["OUT1_TTL"] == int(SysBus.PULSE1)
+        assert settings["OUT2_TTL"] == int(SysBus.PULSE1)
+        assert achieved["outputs"] == ["OUT1_TTL", "OUT2_TTL"]
+
+    def test_duplicate_outputs_collapse(self):
+        _, achieved = pulse_train_registers(
+            1000, out=["OUT1_TTL", "OUT1_TTL", "OUT2_TTL"]
+        )
+        assert achieved["outputs"] == ["OUT1_TTL", "OUT2_TTL"]
+
+    def test_no_outputs_raises(self):
+        with pytest.raises(ValueError, match="At least one output"):
+            pulse_train_registers(1000, out=[])
+
     def test_alternate_output(self):
         settings, _ = pulse_train_registers(1000, out="OUT3_NIM")
         assert settings["OUT3_NIM"] == int(SysBus.PULSE1)

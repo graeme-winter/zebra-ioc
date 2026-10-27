@@ -45,8 +45,15 @@ python examples/05_square_wave.py                       # 1 kHz square
 python examples/05_square_wave.py --freq 100 --duty 10  # 100 Hz, 10%
 python examples/05_square_wave.py --freq 5000 --width-us 2
 python examples/05_square_wave.py --out OUT3_TTL
+python examples/05_square_wave.py --monitor OUT2_TTL    # same signal, 2 BNCs
 python examples/05_square_wave.py --stop
 ```
+
+`--monitor` drives a second output from the same system bus signal. The bus
+fans out, so the copy is free and comes from its own buffer: you can scope it
+without loading the first output or reaching for a T-piece. Both are set and
+cleared together, which matters because `--stop` only clears the outputs it
+was given, and a forgotten second output keeps running.
 
 The fastest way to check a cable, a scope setup or a detector trigger input
 without a signal generator. It reports the rate and width it actually
@@ -66,6 +73,7 @@ else goes through PVs.
 zebra-ioc --port /dev/ttyUSB0 --prefix BENCH:ZEBRA:     # one terminal
 python examples/06_square_wave_epics.py BENCH:ZEBRA:    # another
 python examples/06_square_wave_epics.py BENCH:ZEBRA: --freq 100 --duty 10
+python examples/06_square_wave_epics.py BENCH:ZEBRA: --monitor OUT2_TTL
 python examples/06_square_wave_epics.py BENCH:ZEBRA: --stop
 ```
 

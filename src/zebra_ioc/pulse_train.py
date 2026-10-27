@@ -14,6 +14,8 @@ This is pure arithmetic over register values with no IO, so the same result
 can be written over serial or over Channel Access.
 """
 
+from collections.abc import Sequence
+
 CLOCK_HZ = 1_000_000
 """The internal clock this divides down (SysBus.CLOCK_1MHZ)."""
 
@@ -110,7 +112,7 @@ def pulse_train_registers(
     freq_hz: float,
     duty: float | None = None,
     width_us: float | None = None,
-    out: str = "OUT1_TTL",
+    out: str | Sequence[str] = "OUT1_TTL",
     block: int = 1,
 ) -> tuple[dict[str, int], dict[str, float | str | int]]:
     """Build the register settings for a free running pulse train.
@@ -119,7 +121,10 @@ def pulse_train_registers(
         freq_hz: Requested repetition rate
         duty: Duty cycle in percent. Defaults to 50 if no width is given
         width_us: Explicit pulse width in microseconds, overriding duty
-        out: Output register to drive, e.g. 'OUT1_TTL'
+        out: Output register to drive, e.g. 'OUT1_TTL', or several of them.
+            The system bus fans out, so driving a second output from the same
+            signal costs nothing and gives an independently buffered copy to
+            scope without loading the first
         block: Which DIV and PULSE block pair to use, 1-4
 
     Returns:
@@ -131,6 +136,10 @@ def pulse_train_registers(
     """
     if not 1 <= block <= 4:
         raise ValueError(f"Block must be 1-4, got {block}")
+
+    outputs = [out] if isinstance(out, str) else list(dict.fromkeys(out))
+    if not outputs:
+        raise ValueError("At least one output is required")
 
     # Imported here so the module stays usable without the register tables
     from .registers import SysBus
@@ -148,8 +157,9 @@ def pulse_train_registers(
         f"PULSE{block}_PRE": prescaler,
         f"PULSE{block}_DLY": 0,
         f"PULSE{block}_WID": ticks,
-        out: int(pulse_out),
     }
+    for output in outputs:
+        settings[output] = int(pulse_out)
 
     achieved = {
         "frequency_hz": actual_freq,
@@ -157,7 +167,11 @@ def pulse_train_registers(
         "duty_percent": 100.0 * actual_width / (1e6 / actual_freq),
         "divisor": div,
         "prescaler": label,
-        "chain": f"CLOCK_1MHZ -> DIV{block} (/{div}) -> PULSE{block} -> {out}",
+        "outputs": outputs,
+        "chain": (
+            f"CLOCK_1MHZ -> DIV{block} (/{div}) -> PULSE{block} -> "
+            + ", ".join(outputs)
+        ),
     }
 
     return settings, achieved

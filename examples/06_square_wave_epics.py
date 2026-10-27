@@ -14,6 +14,7 @@ then
     python examples/06_square_wave_epics.py BENCH:ZEBRA:
     python examples/06_square_wave_epics.py BENCH:ZEBRA: --freq 100 --duty 10
     python examples/06_square_wave_epics.py BENCH:ZEBRA: --out OUT3_TTL
+    python examples/06_square_wave_epics.py BENCH:ZEBRA: --monitor OUT2_TTL
     python examples/06_square_wave_epics.py BENCH:ZEBRA: --stop
 
 The register values are worked out by the same zebra_ioc.pulse_train code
@@ -47,6 +48,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     width.add_argument("--duty", type=float, help="Duty cycle in percent")
     width.add_argument("--width-us", type=float, help="Pulse width in microseconds")
     parser.add_argument("--out", default="OUT1_TTL", help="Output PV to drive")
+    parser.add_argument(
+        "--monitor",
+        help=(
+            "Second output carrying the same signal, e.g. OUT2_TTL, so it "
+            "can be scoped without loading the first. Set and cleared "
+            "together with --out"
+        ),
+    )
     parser.add_argument(
         "--block", type=int, default=1, help="Which DIV/PULSE pair to use, 1-4"
     )
@@ -92,19 +101,22 @@ async def main(args: argparse.Namespace) -> int:
     if not await check_ioc(prefix, args.timeout):
         return 1
 
+    outputs = [args.out] + ([args.monitor] if args.monitor else [])
+
     if args.stop:
-        await caput(
-            f"{prefix}{args.out}",
-            int(SysBus.DISCONNECT),
-            wait=True,
-            timeout=args.timeout,
-        )
-        print(f"{prefix}{args.out} disconnected")
+        for output in outputs:
+            await caput(
+                f"{prefix}{output}",
+                int(SysBus.DISCONNECT),
+                wait=True,
+                timeout=args.timeout,
+            )
+        print(f"{', '.join(prefix + o for o in outputs)} disconnected")
         return 0
 
     try:
         settings, achieved = pulse_train_registers(
-            args.freq, args.duty, args.width_us, args.out, args.block
+            args.freq, args.duty, args.width_us, outputs, args.block
         )
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -138,14 +150,17 @@ async def main(args: argparse.Namespace) -> int:
             mismatches += 1
         print(f"  {name:14s} = {int(readback):<10d}{flag}")
 
-    signal = await caget(f"{prefix}{args.out}_STR", timeout=args.timeout)
-    print(f"\n  {args.out} is driven by {signal}")
+    print()
+    for output in outputs:
+        signal = await caget(f"{prefix}{output}_STR", timeout=args.timeout)
+        print(f"  {output} is driven by {signal}")
 
     if mismatches:
         print(f"\n{mismatches} register(s) did not take", file=sys.stderr)
         return 1
 
-    print(f"\nScope {args.out.split('_')[0]} now. Use --stop to turn it off.")
+    scope = " and ".join(o.split("_")[0] for o in outputs)
+    print(f"\nScope {scope} now. Use --stop to turn it off.")
     return 0
 
 

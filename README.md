@@ -169,6 +169,9 @@ python examples/05_square_wave.py /dev/ttyUSB0 --freq 1000
 python examples/05_square_wave.py /dev/ttyUSB0 --stop
 ```
 
+`--monitor OUT2_TTL` drives a second output from the same bus signal, which
+gives an independently buffered copy to scope without loading the first.
+
 It persists after the script exits, since registers are volatile but retained
 while powered.
 
@@ -192,7 +195,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-159 tests, no hardware needed.
+164 tests, no hardware needed.
 
 ## Documentation
 

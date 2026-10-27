@@ -15,6 +15,7 @@ only. Example 6 writes the same registers over Channel Access.
     python examples/05_square_wave.py --freq 100 --duty 10  # 100 Hz, 10%
     python examples/05_square_wave.py --freq 5000 --width-us 2
     python examples/05_square_wave.py --out OUT3_TTL
+    python examples/05_square_wave.py --monitor OUT2_TTL  # same signal, 2 BNCs
     python examples/05_square_wave.py --stop
 
 The configuration persists after the script exits - the Zebra holds it in
@@ -48,6 +49,14 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--out", default="OUT1_TTL", help="Output register to drive"
     )
     parser.add_argument(
+        "--monitor",
+        help=(
+            "Second output carrying the same signal, e.g. OUT2_TTL, so it "
+            "can be scoped without loading the first. Set and cleared "
+            "together with --out"
+        ),
+    )
+    parser.add_argument(
         "--block", type=int, default=1, help="Which DIV/PULSE pair to use, 1-4"
     )
     parser.add_argument(
@@ -72,14 +81,17 @@ def report(achieved: dict, requested: float) -> None:
 
 async def main(args: argparse.Namespace) -> int:
     async with ZebraDevice(args.port) as zebra:
+        outputs = [args.out] + ([args.monitor] if args.monitor else [])
+
         if args.stop:
-            await zebra.write_register(args.out, int(SysBus.DISCONNECT))
-            print(f"{args.out} disconnected")
+            for output in outputs:
+                await zebra.write_register(output, int(SysBus.DISCONNECT))
+            print(f"{', '.join(outputs)} disconnected")
             return 0
 
         try:
             settings, achieved = pulse_train_registers(
-                args.freq, args.duty, args.width_us, args.out, args.block
+                args.freq, args.duty, args.width_us, outputs, args.block
             )
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
@@ -88,7 +100,8 @@ async def main(args: argparse.Namespace) -> int:
         await zebra.configure(settings)
 
         report(achieved, args.freq)
-        print(f"\nScope {args.out.split('_')[0]} now. Use --stop to turn it off.")
+        scope = " and ".join(o.split("_")[0] for o in outputs)
+        print(f"\nScope {scope} now. Use --stop to turn it off.")
         print("The output is LVTTL, about 3.3V - use a 10:1 probe, and do not")
         print("put a 50 ohm feedthrough on it.")
 
