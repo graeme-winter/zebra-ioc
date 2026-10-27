@@ -61,6 +61,11 @@ CAPTURE_PVS = {
     "div4": "PC_DIV4",
 }
 
+#: Capture fields that also get a scalar "most recent value" PV, as
+#: PC_<NAME>_LAST. These are the ones the legacy Diamond driver defines; it
+#: has no _LAST for the timestamp or the system bus, so neither do we.
+LAST_VALUE_FIELDS = ("enc1", "enc2", "enc3", "enc4", "div1", "div2", "div3", "div4")
+
 #: Seconds between capture array updates while a capture is running.
 #: Publishing per point would put one CA update on the wire per captured
 #: point, which at a few kHz is not something to do to a network.
@@ -215,6 +220,16 @@ class ZebraIOC:
                 )
             )
 
+        # Scalar "most recent value" PVs. Updated straight from each
+        # captured point rather than from the buffer, so they keep tracking
+        # even after the buffer fills - a counter that silently freezes is
+        # worse than one that stops being archived.
+        self._last_values = {}
+        for field in LAST_VALUE_FIELDS:
+            self._last_values[field] = self._track(
+                builder.longIn(f"{CAPTURE_PVS[field]}_LAST", initial_value=0)
+            )
+
         self.pc_num_down = self._track(
             builder.longIn("PC_NUM_DOWN", initial_value=0)
         )
@@ -334,11 +349,21 @@ class ZebraIOC:
 
     async def _on_capture_start(self) -> None:
         self._last_flush = 0.0
+        for record in self._last_values.values():
+            record.set(0)
         self.pc_capturing.set(True)
         self.status_msg.set("Capturing")
         await self._publish_capture(force=True)
 
-    async def _on_capture_point(self, _data) -> None:
+    async def _on_capture_point(self, data) -> None:
+        for field, attribute, _ in ALL_FIELDS:
+            record = self._last_values.get(field)
+            if record is None:
+                continue
+            value = getattr(data, attribute)
+            if value is not None:
+                record.set(int(value))
+
         await self._publish_capture()
 
     async def _on_capture_end(self) -> None:

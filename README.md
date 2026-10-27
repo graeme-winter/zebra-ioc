@@ -58,6 +58,11 @@ Plus:
 
 - **Capture arrays** - `PC_TIME`, `PC_ENC1`-`PC_ENC4`, `PC_SYS1`-`PC_SYS2`,
   `PC_DIV1`-`PC_DIV4`, with `PC_NUM_DOWN`, `PC_CAPTURE_MAX` and `PC_OVERFLOW`
+- **Latest captured value** - `PC_ENC1_LAST`-`PC_ENC4_LAST` and
+  `PC_DIV1_LAST`-`PC_DIV4_LAST`, as in the legacy driver. These are updated
+  from each point as it arrives rather than from the capture buffer, so they
+  keep tracking even once the buffer is full. `PC_DIV<n>_LAST` is how pulse
+  counting is read back; see `examples/07_pulse_counting.py`
 - **System bus** - one bi per signal, `SYS_BUS_SOFT_IN1`, `SYS_BUS_PC_GATE`,
   `SYS_BUS_AND1` and so on, named after the signal rather than numbered
 - **IOC status** - `CONNECTED`, `STATUS`, `PC_CAPTURING`
@@ -195,7 +200,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-164 tests, no hardware needed.
+183 tests, no hardware needed.
 
 ## Documentation
 

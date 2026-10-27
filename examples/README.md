@@ -87,6 +87,45 @@ Zebra behind it accepts every caput and reports success - and reads the
 `_RBV` PVs back afterwards, since those come from the hardware rather than
 from the demands that were just sent.
 
+## 07_pulse_counting.py - counting pulses, read with one caget
+
+The Zebra has no scaler block, but a DIV block's internal counter is a free
+running pulse counter if the divisor is set high enough never to wrap.
+Position compare samples it and the IOC publishes the latest value, so the
+running total is a single PV.
+
+    IN1_TTL --> DIV1 (counter) --> sampled by PC --> PC_DIV1_LAST
+
+```bash
+python examples/07_pulse_counting.py BENCH:ZEBRA: setup
+python examples/07_pulse_counting.py BENCH:ZEBRA: zero
+# ... time passes, pulses arrive ...
+caget BENCH:ZEBRA:PC_DIV1_LAST
+```
+
+`read` and `watch` are conveniences for when there is no caget binary, and
+`stop` disarms. `--input`, `--block` and `--sample-ms` change what is counted,
+where, and how often the total is republished.
+
+Pulses are never missed - the counter runs in the FPGA - but the readout is
+sampled, so the PV lags by up to one sample interval (100 ms by default).
+
+`zero` uses SYS_RESET, which also resets the gate, pulse and quad blocks and
+disarms position compare. That is fine on a bench; in a running system take a
+baseline reading and subtract instead.
+
+### Self test
+
+Count the Zebra's own pulse train, so the answer is known:
+
+```bash
+# patch OUT1 TTL to IN1 TTL with a BNC lead, then
+python examples/05_square_wave.py $PORT --freq 1000 --width-us 100
+python examples/07_pulse_counting.py BENCH:ZEBRA: setup
+python examples/07_pulse_counting.py BENCH:ZEBRA: zero
+python examples/07_pulse_counting.py BENCH:ZEBRA: watch   # +1000 per second
+```
+
 ## 04_ioc_client.py - the same thing over Channel Access
 
 Needs the IOC running in another terminal:
