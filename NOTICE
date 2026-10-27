@@ -1,0 +1,23 @@
+zebra-ioc
+Copyright 2026 Graeme Winter
+
+This product includes software derived from fastcs-zebra
+(https://github.com/gilesknap/fastcs-zebra), Copyright Diamond Light Source
+and contributors, licensed under the Apache License, Version 2.0.
+
+The following modules are derived from that project, with modifications:
+
+  src/zebra_ioc/protocol.py
+  src/zebra_ioc/registers.py
+  src/zebra_ioc/interrupts.py
+  src/zebra_ioc/transport.py
+  src/zebra_ioc/capture.py
+  src/zebra_ioc/simulator.py
+  src/zebra_ioc/enums.py
+  tests/test_transport_tcp.py
+  tests/test_registers.py
+  tests/test_capture.py
+
+The register map and the protocol they implement derive in turn from the
+Diamond Light Source zebra support module
+(https://github.com/DiamondLightSource/zebra).

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zebra-ioc"
+version = "0.1.0"
+description = "EPICS soft IOC for the Quantum Detectors Zebra"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "softioc>=4.5",
+    "numpy",
+    "aioserial",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "aioca"]
+
+[project.scripts]
+zebra-ioc = "zebra_ioc.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
