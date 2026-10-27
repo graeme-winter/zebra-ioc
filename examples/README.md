@@ -52,6 +52,15 @@ point: the same script would work against the Diamond areaDetector driver.
 
 ## The same by hand
 
+These need the `caget` and `caput` binaries, which come from an EPICS base
+install. The pip dependencies give you `aioca` as a Python library only, so
+without EPICS base use example 04 or a one-liner:
+
+```bash
+python3 -c "from aioca import caget; import asyncio; \
+    print(asyncio.run(caget('TEST:ZEBRA:SYS_VER')))"
+```
+
 ```bash
 caget TEST:ZEBRA:CONNECTED TEST:ZEBRA:STATUS TEST:ZEBRA:SYS_VER
 
@@ -70,6 +79,13 @@ caget -# 20 TEST:ZEBRA:PC_ENC1         # read arrays after the capture ends
 caget -# 20 TEST:ZEBRA:PC_TIME
 caget TEST:ZEBRA:PC_OVERFLOW
 ```
+
+## One process at a time
+
+The serial port is opened exclusively, so the IOC and these scripts cannot
+both hold it. Stop one before starting the other, or you get a
+`SerialException` about the device being busy, which reads like a cabling
+fault if you are not expecting it.
 
 ## What the simulator does and does not do
 

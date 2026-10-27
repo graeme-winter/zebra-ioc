@@ -13,10 +13,13 @@ dependencies = [
     "softioc>=4.5",
     "numpy",
     "aioserial",
+    # aioca is what examples/04 uses, and without a full EPICS base install
+    # it is also the only way to caget anything, so it is not optional
+    "aioca",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "aioca"]
+dev = ["pytest", "pytest-asyncio"]
 
 [project.scripts]
 zebra-ioc = "zebra_ioc.__main__:main"

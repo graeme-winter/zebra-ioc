@@ -138,6 +138,59 @@ output.
   `DiamondLightSource/dodal`, `src/dodal/devices/zebra/zebra.py` as the
   template. It is hand written there too.
 
+## On the bench
+
+Measured on real hardware, since the manual is ambiguous and the front panel
+label is misleading:
+
+- **TTL outputs are LVTTL, about 3.3 V**, despite the BNC being labelled TTL.
+  That clears a 5 V TTL input's 2.0 V threshold but not a 5 V CMOS input's
+  3.5 V one. Check before wiring a detector trigger.
+- **Do not put a 50 Ohm feedthrough on a TTL output.** The driver is a small
+  LVTTL buffer, not a source matched 50 Ohm driver; holding 3.3 V across
+  50 Ohm needs 66 mA and the level collapses. Frequency still reads correctly,
+  which makes it easy to miss.
+- **Unterminated coax rings**, as you would expect from sub-nanosecond edges
+  into an open end.
+- For **levels**, use a 10:1 probe at the BNC, or roughly 1 kOhm in series
+  into a 1 MOhm input. For **edges and timing**, use series termination of
+  about 47 Ohm at the Zebra end, coax, 1 MOhm at the scope, nothing at the far
+  end.
+- TTL *inputs* accept 2.3 to 5.5 V and are terminated with 1 kOhm, not
+  50 Ohm.
+
+TTL, NIM and open collector are all BNC. The LEMOs are LVDS and PECL only.
+
+A quick way to prove an output end to end is to route the 1 kHz clock to it
+and scope the result:
+
+```bash
+python3 -c "
+import asyncio
+from zebra_ioc import SysBus, ZebraDevice
+async def main():
+    async with ZebraDevice('/dev/ttyUSB0') as z:
+        await z.write_register('OUT1_TTL', int(SysBus.CLOCK_1KHZ))
+asyncio.run(main())
+"
+```
+
+It persists after the script exits, since registers are volatile but retained
+while powered. Write 0 to disconnect.
+
+Then start the IOC and check it picked that up:
+
+```
+$(P)OUT1_TTL_RBV  -> 58
+$(P)OUT1_TTL_STR  -> CLOCK_1KHZ
+```
+
+If so the startup readback is working against real hardware. If it reads 0,
+the IOC is showing you its own defaults rather than the box.
+
+Note the serial port is opened exclusively: the IOC and the example scripts
+cannot both hold it.
+
 ## Testing
 
 ```bash
