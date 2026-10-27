@@ -192,7 +192,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-145 tests, no hardware needed.
+159 tests, no hardware needed.
 
 ## Documentation
 

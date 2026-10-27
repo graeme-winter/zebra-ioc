@@ -9,6 +9,7 @@ from .capture import CaptureBuffer
 from .device import ZebraDevice
 from .interrupts import InterruptHandler, PositionCompareData
 from .protocol import ZebraProtocol
+from .pulse_train import divider, pulse_train_registers, pulse_width
 from .registers import (
     REGISTERS_32BIT_BY_NAME,
     REGISTERS_BY_NAME,
@@ -27,6 +28,9 @@ __all__ = [
     "REGISTERS_32BIT_BY_NAME",
     "REGISTERS_BY_NAME",
     "SysBus",
+    "divider",
+    "pulse_train_registers",
+    "pulse_width",
     "ZebraDevice",
     "ZebraProtocol",
     "ZebraTransport",

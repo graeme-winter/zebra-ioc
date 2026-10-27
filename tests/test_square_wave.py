@@ -1,24 +1,14 @@
-"""Tests for the pulse train arithmetic in examples/05_square_wave.py.
+"""Tests for the pulse train arithmetic in zebra_ioc.pulse_train.
 
 The register values that come out of this are what actually reach the
 hardware, and getting a prescaler or a divisor wrong gives a plausible
 looking wave at the wrong rate, so the sums are worth pinning down.
 """
 
-import importlib.util
-import pathlib
-
 import pytest
 
-_PATH = (
-    pathlib.Path(__file__).parent.parent / "examples" / "05_square_wave.py"
-)
-_spec = importlib.util.spec_from_file_location("square_wave", _PATH)
-square_wave = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(square_wave)
-
-divider = square_wave.divider
-pulse_width = square_wave.pulse_width
+from zebra_ioc import SysBus
+from zebra_ioc.pulse_train import divider, pulse_train_registers, pulse_width
 
 
 class TestDivider:
@@ -98,3 +88,43 @@ class TestPulseWidth:
             _, _, ticks, _ = pulse_width(freq, None, None)
             assert isinstance(ticks, int)
             assert 1 <= ticks <= 65535
+
+
+class TestPulseTrainRegisters:
+    """The settings dict both examples write, however they write it."""
+
+    def test_full_chain(self):
+        settings, achieved = pulse_train_registers(1000)
+        assert settings == {
+            "DIV1_INP": int(SysBus.CLOCK_1MHZ),
+            "DIV1_DIV": 1000,
+            "PULSE1_INP": int(SysBus.DIV1_OUTD),
+            "PULSE1_PRE": 5,
+            "PULSE1_DLY": 0,
+            "PULSE1_WID": 5000,
+            "OUT1_TTL": int(SysBus.PULSE1),
+        }
+        assert achieved["frequency_hz"] == pytest.approx(1000)
+        assert achieved["duty_percent"] == pytest.approx(50.0)
+
+    def test_alternate_output(self):
+        settings, _ = pulse_train_registers(1000, out="OUT3_NIM")
+        assert settings["OUT3_NIM"] == int(SysBus.PULSE1)
+        assert "OUT1_TTL" not in settings
+
+    def test_alternate_block(self):
+        settings, _ = pulse_train_registers(1000, block=3)
+        assert settings["PULSE3_INP"] == int(SysBus.DIV3_OUTD)
+        assert settings["OUT1_TTL"] == int(SysBus.PULSE3)
+        assert "DIV1_DIV" not in settings
+
+    @pytest.mark.parametrize("block", [0, 5, -1])
+    def test_invalid_block_raises(self, block):
+        with pytest.raises(ValueError, match="Block must be"):
+            pulse_train_registers(1000, block=block)
+
+    def test_achieved_reports_the_real_rate(self):
+        """3Hz does not divide the clock exactly; say so rather than lie."""
+        _, achieved = pulse_train_registers(3)
+        assert achieved["frequency_hz"] != 3
+        assert achieved["frequency_hz"] == pytest.approx(3.000003, rel=1e-6)

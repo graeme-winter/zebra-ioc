@@ -33,7 +33,7 @@ Configures a 90 degree sweep with one pulse per degree, arms, captures, and
 prints the encoder and timestamp arrays. This is the shape of a rotation
 scan.
 
-## 05_square_wave.py - a pulse train on an output
+## 05_square_wave.py - a pulse train on an output, over serial
 
 Builds an arbitrary frequency, arbitrary width TTL pulse train from the
 Zebra's own 1 MHz clock:
@@ -55,6 +55,29 @@ divide the clock exactly.
 
 The configuration persists after the script exits, since the Zebra holds it
 in volatile memory until it loses power. `--stop` disconnects the output.
+
+## 06_square_wave_epics.py - the same thing over EPICS
+
+What example 5 does over the serial port, through a running IOC instead.
+This is how you would really do it: the IOC owns the port, and everything
+else goes through PVs.
+
+```bash
+zebra-ioc --port /dev/ttyUSB0 --prefix BENCH:ZEBRA:     # one terminal
+python examples/06_square_wave_epics.py BENCH:ZEBRA:    # another
+python examples/06_square_wave_epics.py BENCH:ZEBRA: --freq 100 --duty 10
+python examples/06_square_wave_epics.py BENCH:ZEBRA: --stop
+```
+
+Both examples call the same `zebra_ioc.pulse_train` code to work out the
+register values, so the only difference between them is how those values
+reach the hardware: `write_register` in one, `caput` in the other. Nothing
+else changes, because the PV names *are* the register names.
+
+It checks `CONNECTED` before writing anything - an IOC that is up but has no
+Zebra behind it accepts every caput and reports success - and reads the
+`_RBV` PVs back afterwards, since those come from the hardware rather than
+from the demands that were just sent.
 
 ## 04_ioc_client.py - the same thing over Channel Access
 
