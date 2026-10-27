@@ -110,6 +110,7 @@ class ZebraIOC:
         self._build_capture_records()
         self._build_sys_bus_records()
         self._build_status_records()
+        self._build_command_records()
 
         device.on_capture_start(self._on_capture_start)
         device.on_capture_point(self._on_capture_point)
@@ -234,6 +235,32 @@ class ZebraIOC:
             self._sys_bits[index] = self._track(
                 builder.boolIn(f"SYS_BUS_{signal.name}", ZNAM="Low", ONAM="High")
             )
+
+    def _build_command_records(self) -> None:
+        """Commands that are protocol level, not register writes.
+
+        Saving and restoring flash are the 'S' and 'L' wire commands, so
+        they have no register in the tables and would otherwise get no PV.
+        """
+
+        async def store(_value) -> None:
+            try:
+                await self.device.save_to_flash()
+                self.status_msg.set("Saved to flash")
+            except Exception as e:
+                logger.error(f"Save to flash failed: {e}")
+
+        async def restore(_value) -> None:
+            try:
+                await self.device.load_from_flash()
+                self.status_msg.set("Loaded from flash")
+            except Exception as e:
+                logger.error(f"Load from flash failed: {e}")
+                return
+            await self.read_all()
+
+        self._track(builder.Action("STORE", on_update=store))
+        self._track(builder.Action("RESTORE", on_update=restore))
 
     def _build_status_records(self) -> None:
         """IOC level status, with no register behind it."""
