@@ -186,8 +186,20 @@ class ZebraDevice:
 
         await protocol.write_register(REGISTERS_BY_NAME[name].address, value)
 
+        if name == "PC_BIT_CAP":
+            # The interrupt parser splits each data message according to this
+            # mask, so it has to learn about the change at the same time the
+            # hardware does, or every subsequent point fails to parse
+            self.interrupts.set_bit_cap(value)
+
     async def arm(self) -> None:
-        """Arm position compare."""
+        """Arm position compare.
+
+        Re-reads PC_BIT_CAP first, so a mask changed out of band - restored
+        from flash, or set by another client - is picked up rather than
+        corrupting the whole capture.
+        """
+        self.interrupts.set_bit_cap(await self.read_register("PC_BIT_CAP"))
         await self.write_register("PC_ARM", 1)
 
     async def disarm(self) -> None:
