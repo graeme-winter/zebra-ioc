@@ -42,6 +42,56 @@ class ZebraSimulator:
         # Callback for sending messages (set by transport)
         self._send_callback: Callable[[str], None] | None = None
 
+    def _update_sys_stat(self) -> None:
+        """Recompute the system bus status registers from the configuration.
+
+        A partial model: soft inputs drive their own bus signals, and the
+        AND and OR blocks are evaluated from their INP/ENA/INV registers.
+        The timing blocks (GATE, PULSE, DIV) are not modelled, so their bus
+        signals stay low. Enough to exercise routing, not a substitute for
+        hardware.
+        """
+        bus = dict.fromkeys(range(64), False)
+
+        # Soft inputs: SOFT_IN register bits 0-3 drive bus signals 60-63
+        soft_in = self.memory.get(0x7F, 0)
+        for i in range(4):
+            bus[60 + i] = bool((soft_in >> i) & 1)
+
+        # AND1-4 are bus 32-35, OR1-4 are bus 36-39
+        for block in range(4):
+            for kind, inv_base, ena_base, inp_base, out_base in (
+                ("and", 0x00, 0x04, 0x08, 32),
+                ("or", 0x18, 0x1C, 0x20, 36),
+            ):
+                inv = self.memory.get(inv_base + block, 0)
+                ena = self.memory.get(ena_base + block, 0)
+                if not ena:
+                    continue
+
+                values = []
+                for i in range(4):
+                    if not (ena >> i) & 1:
+                        continue
+                    source = self.memory.get(inp_base + block * 4 + i, 0)
+                    value = bus.get(source, False)
+                    if (inv >> i) & 1:
+                        value = not value
+                    values.append(value)
+
+                if values:
+                    bus[out_base + block] = (
+                        all(values) if kind == "and" else any(values)
+                    )
+
+        stat1 = sum(1 << i for i in range(32) if bus[i])
+        stat2 = sum(1 << i for i in range(32) if bus[32 + i])
+
+        self.memory[0xF2] = stat1 & 0xFFFF
+        self.memory[0xF3] = (stat1 >> 16) & 0xFFFF
+        self.memory[0xF4] = stat2 & 0xFFFF
+        self.memory[0xF5] = (stat2 >> 16) & 0xFFFF
+
     def set_send_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback function for sending messages to host.
 
@@ -75,6 +125,8 @@ class ZebraSimulator:
 
         # Read register command: R<AA>
         if command.startswith("R") and len(command) == 3:
+            if 0xF2 <= int(command[1:3], 16) <= 0xF5:
+                self._update_sys_stat()
             try:
                 addr = int(command[1:3], 16)
                 if addr in self.memory:
