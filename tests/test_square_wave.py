@@ -1,0 +1,100 @@
+"""Tests for the pulse train arithmetic in examples/05_square_wave.py.
+
+The register values that come out of this are what actually reach the
+hardware, and getting a prescaler or a divisor wrong gives a plausible
+looking wave at the wrong rate, so the sums are worth pinning down.
+"""
+
+import importlib.util
+import pathlib
+
+import pytest
+
+_PATH = (
+    pathlib.Path(__file__).parent.parent / "examples" / "05_square_wave.py"
+)
+_spec = importlib.util.spec_from_file_location("square_wave", _PATH)
+square_wave = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(square_wave)
+
+divider = square_wave.divider
+pulse_width = square_wave.pulse_width
+
+
+class TestDivider:
+    """DIV1 divides the 1 MHz clock down to the repetition rate."""
+
+    @pytest.mark.parametrize(
+        "freq,expected_div",
+        [(1_000_000, 1), (1000, 1000), (100, 10_000), (1, 1_000_000)],
+    )
+    def test_exact_rates(self, freq, expected_div):
+        div, actual = divider(freq)
+        assert div == expected_div
+        assert actual == pytest.approx(freq)
+
+    def test_inexact_rate_reports_what_it_got(self):
+        """3 Hz does not divide the clock exactly, so say so rather than lie."""
+        div, actual = divider(3)
+        assert div == 333_333
+        assert actual == pytest.approx(3.000003, rel=1e-6)
+
+    @pytest.mark.parametrize("freq", [0, -1, 2_000_000])
+    def test_unreachable_rates_raise(self, freq):
+        with pytest.raises(ValueError):
+            divider(freq)
+
+
+class TestPulseWidth:
+    """PULSE1 reshapes each divided pulse to the requested width."""
+
+    def test_default_is_half_the_period(self):
+        _, _, ticks, width_us = pulse_width(1000, None, None)
+        assert width_us == pytest.approx(500.0)
+        assert ticks == 5000
+
+    def test_duty_cycle(self):
+        _, _, _, width_us = pulse_width(1000, 10.0, None)
+        assert width_us == pytest.approx(100.0)
+
+    def test_explicit_width_wins(self):
+        _, _, _, width_us = pulse_width(1000, None, 2.0)
+        assert width_us == pytest.approx(2.0)
+
+    def test_millisecond_prescaler_for_short_pulses(self):
+        prescaler, label, _, _ = pulse_width(1000, None, 2.0)
+        assert (prescaler, label) == (5, "ms")
+
+    def test_prescaler_steps_up_for_long_pulses(self):
+        """A 50% duty cycle below about 76Hz overflows the ms prescaler.
+
+        Stepping up to the second prescaler is what stops that being a
+        confusing cliff in the middle of the useful range.
+        """
+        prescaler, label, _, width_us = pulse_width(10, None, None)
+        assert (prescaler, label) == (5000, "s")
+        assert width_us == pytest.approx(50_000.0)
+
+    def test_coarsest_prescaler_for_very_long_pulses(self):
+        prescaler, label, _, _ = pulse_width(0.05, None, None)
+        assert (prescaler, label) == (50000, "10s")
+
+    def test_width_must_fit_in_the_period(self):
+        """A PULSE block errors if retriggered while still producing."""
+        with pytest.raises(ValueError, match="does not fit"):
+            pulse_width(1000, None, 1000.0)
+
+    def test_width_below_resolution_raises(self):
+        with pytest.raises(ValueError, match="resolution"):
+            pulse_width(1000, None, 0.01)
+
+    def test_zero_width_raises(self):
+        with pytest.raises(ValueError, match="positive"):
+            pulse_width(1000, 0.0, None)
+
+    def test_register_values_are_integers(self):
+        """Anything else fails on the way to a 16 bit register."""
+        for freq in (1, 10, 100, 1000, 10_000, 100_000):
+            _, _, ticks, _ = pulse_width(freq, None, None)
+            assert isinstance(ticks, int)
+            assert 1 <= ticks <= 65535

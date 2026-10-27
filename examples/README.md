@@ -33,6 +33,29 @@ Configures a 90 degree sweep with one pulse per degree, arms, captures, and
 prints the encoder and timestamp arrays. This is the shape of a rotation
 scan.
 
+## 05_square_wave.py - a pulse train on an output
+
+Builds an arbitrary frequency, arbitrary width TTL pulse train from the
+Zebra's own 1 MHz clock:
+
+    CLOCK_1MHZ -> DIV1 (divide by N) -> PULSE1 (fixed width) -> OUT1_TTL
+
+```bash
+python examples/05_square_wave.py                       # 1 kHz square
+python examples/05_square_wave.py --freq 100 --duty 10  # 100 Hz, 10%
+python examples/05_square_wave.py --freq 5000 --width-us 2
+python examples/05_square_wave.py --out OUT3_TTL
+python examples/05_square_wave.py --stop
+```
+
+The fastest way to check a cable, a scope setup or a detector trigger input
+without a signal generator. It reports the rate and width it actually
+achieved, which will differ from what you asked for when the rate does not
+divide the clock exactly.
+
+The configuration persists after the script exits, since the Zebra holds it
+in volatile memory until it loses power. `--stop` disconnects the output.
+
 ## 04_ioc_client.py - the same thing over Channel Access
 
 Needs the IOC running in another terminal:

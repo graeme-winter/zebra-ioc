@@ -161,22 +161,16 @@ label is misleading:
 
 TTL, NIM and open collector are all BNC. The LEMOs are LVDS and PECL only.
 
-A quick way to prove an output end to end is to route the 1 kHz clock to it
-and scope the result:
+A quick way to prove an output end to end is to put a pulse train on it and
+scope the result:
 
 ```bash
-python3 -c "
-import asyncio
-from zebra_ioc import SysBus, ZebraDevice
-async def main():
-    async with ZebraDevice('/dev/ttyUSB0') as z:
-        await z.write_register('OUT1_TTL', int(SysBus.CLOCK_1KHZ))
-asyncio.run(main())
-"
+python examples/05_square_wave.py /dev/ttyUSB0 --freq 1000
+python examples/05_square_wave.py /dev/ttyUSB0 --stop
 ```
 
 It persists after the script exits, since registers are volatile but retained
-while powered. Write 0 to disconnect.
+while powered.
 
 Then start the IOC and check it picked that up:
 
@@ -198,7 +192,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-127 tests, no hardware needed.
+145 tests, no hardware needed.
 
 ## Documentation
 
