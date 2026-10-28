@@ -126,6 +126,38 @@ python examples/07_pulse_counting.py BENCH:ZEBRA: zero
 python examples/07_pulse_counting.py BENCH:ZEBRA: watch   # +1000 per second
 ```
 
+## 08_one_per_train.py - one short pulse per train of pulses
+
+Given trains of N pulses, emit one short pulse timed with the first of each
+train and swallow the other N-1.
+
+    IN1_TTL --> PULSE1 (dead time) --> PULSE2 (short) --> OUT1_TTL
+
+```bash
+python examples/08_one_per_train.py BENCH:ZEBRA: --train-ms 500
+python examples/08_one_per_train.py BENCH:ZEBRA: --train-ms 500 --width-us 2
+python examples/08_one_per_train.py BENCH:ZEBRA: --monitor OUT2_TTL
+python examples/08_one_per_train.py BENCH:ZEBRA: --stop
+```
+
+A PULSE block ignores any edge arriving while it is still producing, so
+PULSE1 set to span the train is a self resetting dead time. Its output is as
+wide as the train, so PULSE2 reshapes it into the short pulse you want.
+
+A DIV block looks like the answer but is not: it emits on the Nth pulse of
+each N rather than the first, its counter does not reset between trains (so
+one train of N+1 permanently shifts the phase of everything after), and it
+needs N in advance. None of that applies here.
+
+Constraints: the dead time must be longer than a train and shorter than the
+gap between the start of consecutive trains, and at most 6.5535 s. If both
+cannot be met, use a GATE block reset by an external end of train signal.
+
+Every swallowed edge latches a pulse generator error bit in SYS_STATERR.
+That is documented retrigger behaviour, not a fault, but it means
+SYS_STATERR stays lit until SYS_RESET and is no longer a useful health
+indicator for those blocks.
+
 ## 04_ioc_client.py - the same thing over Channel Access
 
 Needs the IOC running in another terminal:

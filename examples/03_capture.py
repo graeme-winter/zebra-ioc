@@ -30,7 +30,7 @@ async def main(port: str) -> None:
             {
                 "PC_ENC": 0,  # compare against encoder 1 (omega)
                 "PC_DIR": 0,  # positive direction
-                "PC_TSPRE": 5000,  # timestamps in units of 0.01 s
+                "PC_TSPRE": 5000,  # timestamp tick = 5000/50MHz = 100 us
                 "PC_ARM_SEL": 0,  # arm from software
                 "PC_GATE_SEL": 0,  # gate on position
                 "PC_GATE_START": 0,  # open the gate at 0 degrees

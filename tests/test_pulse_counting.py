@@ -142,9 +142,19 @@ class TestSetup:
         assert await ca.device.read_register("PC_GATE_SEL") == 1
         assert await ca.device.read_register("PC_PULSE_SEL") == 1
 
-    async def test_sample_interval(self, ca):
+    async def test_sample_interval_is_in_timestamp_ticks(self, ca):
+        """PC_PULSE_STEP counts PC_TSPRE ticks, not milliseconds.
+
+        With TSPRE=5000 the tick is 100us, so 250ms is 2500 ticks. Writing
+        250 here would sample ten times faster than asked.
+        """
         await example.main(args("setup", "--sample-ms", "250"))
-        assert await ca.device.read_register("PC_PULSE_STEP") == 250
+        assert await ca.device.read_register("PC_TSPRE") == 5000
+        assert await ca.device.read_register("PC_PULSE_STEP") == 2500
+
+    async def test_default_sample_interval(self, ca):
+        await example.main(args("setup"))
+        assert await ca.device.read_register("PC_PULSE_STEP") == 1000
 
     async def test_arms_the_capture(self, ca):
         await example.main(args("setup"))

@@ -117,6 +117,23 @@ which Channel Access has no native type for, so some clients promote them to
 double. The values are correct; the encoders are `LONG` and come back as
 signed integers.
 
+## Time units
+
+Several registers count in prescaler ticks rather than in any natural unit,
+and getting this wrong gives a plausible result at the wrong rate rather than
+an error. The tick is `PRESCALER / 50 MHz`:
+
+| Prescaler | Tick | Range in a 16 bit register |
+|---|---|---|
+| 5 | 100 ns | 6.5535 ms |
+| 5000 | 100 us | 6.5535 s |
+| 50000 | 1 ms | 65.535 s |
+
+This applies to `PULSE<n>_DLY` and `PULSE<n>_WID` via `PULSE<n>_PRE`, and to
+the captured timestamps and the time mode `PC_GATE_*` and `PC_PULSE_*`
+registers via `PC_TSPRE`. `zebra_ioc.pulse_train.duration_ticks` converts a
+duration to the finest prescaler that fits it.
+
 ## Configuration
 
 The Zebra has no configuration file of its own. Configuration is the set of
@@ -200,7 +217,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-183 tests, no hardware needed.
+211 tests, no hardware needed.
 
 ## Documentation
 

@@ -31,6 +31,51 @@ PRESCALERS = (
 MAX_TICKS = 65535
 """PULSE_DLY and PULSE_WID are 16 bit."""
 
+SYSTEM_CLOCK_HZ = 50_000_000
+"""The FPGA system clock the prescalers divide.
+
+A prescaler value P gives a tick of P / 50MHz, so the PRESCALERS entries
+above are 100ns, 100us and 1ms. The same values select the PC_TSPRE
+timestamp unit, where the tick is the resolution of the captured timestamps
+and of PC_GATE_* and PC_PULSE_* in time mode.
+"""
+
+
+def duration_ticks(duration_us: float) -> tuple[int, str, int, float]:
+    """Express a duration as a prescaler and a tick count.
+
+    Picks the finest prescaler the duration fits in, so a long interval still
+    works rather than running off the end of a 16 bit register.
+
+    Args:
+        duration_us: Duration in microseconds
+
+    Returns:
+        (prescaler register value, prescaler label, ticks, actual duration
+        in microseconds)
+
+    Raises:
+        ValueError: If the duration cannot be expressed
+    """
+    if duration_us <= 0:
+        raise ValueError("Duration must be positive")
+
+    for prescaler, label, tick_us in PRESCALERS:
+        ticks = round(duration_us / tick_us)
+        if 1 <= ticks <= MAX_TICKS:
+            return prescaler, label, ticks, ticks * tick_us
+
+    finest = PRESCALERS[0][2]
+    if duration_us < finest:
+        raise ValueError(
+            f"Duration {duration_us:.3f}us is below the {finest}us resolution"
+        )
+
+    coarsest_max = MAX_TICKS * PRESCALERS[-1][2] / 1e6
+    raise ValueError(
+        f"Duration {duration_us:.3f}us exceeds the {coarsest_max:g}s maximum"
+    )
+
 
 def divider(freq_hz: float) -> tuple[int, float]:
     """Work out the DIV divisor, and the rate it actually gives.
@@ -95,17 +140,10 @@ def pulse_width(
             f"{period_us:.3f}us period at {freq_hz:g}Hz"
         )
 
-    for prescaler, label, tick_us in PRESCALERS:
-        ticks = round(width_us / tick_us)
-        if 1 <= ticks <= MAX_TICKS:
-            return prescaler, label, ticks, ticks * tick_us
-
-    finest = PRESCALERS[0][2]
-    if width_us < finest:
-        raise ValueError(f"Width {width_us:.3f}us is below the {finest}us resolution")
-
-    coarsest_max = MAX_TICKS * PRESCALERS[-1][2] / 1e6
-    raise ValueError(f"Width {width_us:.3f}us exceeds the {coarsest_max:g}s maximum")
+    try:
+        return duration_ticks(width_us)
+    except ValueError as e:
+        raise ValueError(str(e).replace("Duration", "Width")) from None
 
 
 def pulse_train_registers(
@@ -170,6 +208,101 @@ def pulse_train_registers(
         "outputs": outputs,
         "chain": (
             f"CLOCK_1MHZ -> DIV{block} (/{div}) -> PULSE{block} -> "
+            + ", ".join(outputs)
+        ),
+    }
+
+    return settings, achieved
+
+
+def one_pulse_per_train_registers(
+    source: str,
+    train_us: float,
+    width_us: float = 10.0,
+    out: str | Sequence[str] = "OUT1_TTL",
+    gate_block: int = 1,
+    shape_block: int = 2,
+) -> tuple[dict[str, int], dict[str, float | str | int]]:
+    """Pass the first pulse of each train and swallow the rest.
+
+    A PULSE block ignores any edge that arrives while it is still producing,
+    so one block set to span the train acts as a self resetting dead time:
+    the first pulse triggers it, pulses 2..N land inside it and are dropped.
+    Its output is train_us wide though, so a second block reshapes that into
+    a short pulse.
+
+        source --> PULSE<gate> (dead time) --> PULSE<shape> (short) --> out
+
+    Unlike a DIV block this gives the FIRST pulse of each train rather than
+    the Nth, needs no reset between trains, and does not care whether every
+    train has the same number of pulses.
+
+    Args:
+        source: System bus signal name carrying the trains, e.g. 'IN1_TTL'
+        train_us: Dead time in microseconds. Must be longer than a train and
+            shorter than the gap between the start of consecutive trains
+        width_us: Width of the output pulse in microseconds
+        out: Output register to drive, or several of them
+        gate_block: PULSE block used as the dead time, 1-4
+        shape_block: PULSE block used to shape the output, 1-4
+
+    Returns:
+        (settings, achieved) where settings maps register name to value and
+        achieved describes what the hardware will actually produce
+
+    Raises:
+        ValueError: If the request cannot be met
+    """
+    from .registers import SysBus
+
+    if gate_block == shape_block:
+        raise ValueError("The dead time and shaping blocks must differ")
+    for name, block in (("gate_block", gate_block), ("shape_block", shape_block)):
+        if not 1 <= block <= 4:
+            raise ValueError(f"{name} must be 1-4, got {block}")
+
+    try:
+        source_signal = int(SysBus[source])
+    except KeyError:
+        raise ValueError(f"{source} is not a system bus signal") from None
+
+    outputs = [out] if isinstance(out, str) else list(dict.fromkeys(out))
+    if not outputs:
+        raise ValueError("At least one output is required")
+
+    if width_us >= train_us:
+        raise ValueError(
+            f"Output width {width_us:g}us must be shorter than the "
+            f"{train_us:g}us dead time"
+        )
+
+    dead_pre, dead_label, dead_ticks, actual_dead = duration_ticks(train_us)
+    out_pre, out_label, out_ticks, actual_width = duration_ticks(width_us)
+
+    settings = {
+        # Dead time: swallows everything after the first pulse of a train
+        f"PULSE{gate_block}_INP": source_signal,
+        f"PULSE{gate_block}_PRE": dead_pre,
+        f"PULSE{gate_block}_DLY": 0,
+        f"PULSE{gate_block}_WID": dead_ticks,
+        # Shaping: one short pulse on the rising edge of the dead time
+        f"PULSE{shape_block}_INP": int(SysBus[f"PULSE{gate_block}"]),
+        f"PULSE{shape_block}_PRE": out_pre,
+        f"PULSE{shape_block}_DLY": 0,
+        f"PULSE{shape_block}_WID": out_ticks,
+    }
+    for output in outputs:
+        settings[output] = int(SysBus[f"PULSE{shape_block}"])
+
+    achieved = {
+        "dead_time_us": actual_dead,
+        "dead_prescaler": dead_label,
+        "width_us": actual_width,
+        "width_prescaler": out_label,
+        "outputs": outputs,
+        "chain": (
+            f"{source} -> PULSE{gate_block} (dead {actual_dead / 1000:g}ms) "
+            f"-> PULSE{shape_block} ({actual_width:g}us) -> "
             + ", ".join(outputs)
         ),
     }

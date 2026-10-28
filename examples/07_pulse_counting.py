@@ -55,8 +55,11 @@ CAPTURE_DIV1 = 1 << 6
 TIME_TRIGGERED = 1
 """PC_GATE_SEL / PC_PULSE_SEL value selecting time rather than position."""
 
-TSPRE_MS = 5000
-"""PC_TSPRE value selecting milliseconds as the timestamp unit."""
+TSPRE = 5000
+"""PC_TSPRE value. The tick is TSPRE/50MHz, so 5000 gives 100us."""
+
+TICK_US = 100.0
+"""Timestamp tick in microseconds, for the TSPRE above."""
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -135,7 +138,7 @@ async def setup(args) -> int:
         "PC_ARM_SEL": 0,
         "PC_GATE_SEL": TIME_TRIGGERED,
         "PC_PULSE_SEL": TIME_TRIGGERED,
-        "PC_TSPRE": TSPRE_MS,
+        "PC_TSPRE": TSPRE,
         "PC_GATE_START": 0,
         "PC_GATE_NGATE": 1,
         "PC_PULSE_START": 0,
@@ -143,8 +146,8 @@ async def setup(args) -> int:
         "PC_BIT_CAP": 1 << (5 + block),
     }
 
-    # Gate and pulse step are in the timestamp units set by PC_TSPRE
-    settings["PC_PULSE_STEP"] = max(1, round(args.sample_ms))
+    # PC_PULSE_STEP counts timestamp ticks, not milliseconds
+    settings["PC_PULSE_STEP"] = max(1, round(args.sample_ms * 1000 / TICK_US))
     # One long gate; the capture runs until disarmed
     settings["PC_GATE_WID"] = 0xFFFF
 
