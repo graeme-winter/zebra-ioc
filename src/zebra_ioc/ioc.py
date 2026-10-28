@@ -158,8 +158,32 @@ class ZebraIOC:
 
         return action
 
-    def _add_writable(self, name: str) -> None:
-        """Add the demand/readback pair for one writable register."""
+    def _add_writable(self, name: str, wide: bool = False) -> None:
+        """Add the demand/readback pair for one writable register.
+
+        Args:
+            name: Register name
+            wide: True for a 32-bit register. EPICS LONG is a signed int32,
+                so a 32-bit register cannot be written past 2147483647
+                through a longout - DIV<n>_DIV goes to 4294967295. Use ao/ai
+                instead, as the legacy Diamond driver does: a double holds
+                every 32-bit value exactly, signed or unsigned.
+        """
+        if wide:
+            self._readbacks[name] = self._track(
+                builder.aIn(f"{name}_RBV", initial_value=0, PREC=0)
+            )
+            self._track(
+                builder.aOut(
+                    name,
+                    initial_value=0,
+                    PREC=0,
+                    always_update=True,
+                    on_update=self._make_setter(name),
+                )
+            )
+            return
+
         self._readbacks[name] = self._track(
             builder.longIn(f"{name}_RBV", initial_value=0)
         )
@@ -183,7 +207,7 @@ class ZebraIOC:
             pair_addresses.add(reg.address_hi)
             if name in _HIDDEN_HALVES:
                 continue  # exposed as capture/status PVs instead
-            self._add_writable(name)
+            self._add_writable(name, wide=True)
 
         for name, reg in REGISTERS_BY_NAME.items():
             if reg.address in hidden or reg.address in pair_addresses:
@@ -226,9 +250,14 @@ class ZebraIOC:
         # worse than one that stops being archived.
         self._last_values = {}
         for field in LAST_VALUE_FIELDS:
-            self._last_values[field] = self._track(
-                builder.longIn(f"{CAPTURE_PVS[field]}_LAST", initial_value=0)
-            )
+            pv = f"{CAPTURE_PVS[field]}_LAST"
+            if field.startswith("div"):
+                # Divider counters are unsigned 32-bit and run past the top
+                # of a signed int32, so they need the same ao/ai treatment
+                record = builder.aIn(pv, initial_value=0, PREC=0)
+            else:
+                record = builder.longIn(pv, initial_value=0)
+            self._last_values[field] = self._track(record)
 
         self.pc_num_down = self._track(
             builder.longIn("PC_NUM_DOWN", initial_value=0)

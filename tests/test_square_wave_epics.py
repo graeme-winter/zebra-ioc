@@ -26,6 +26,14 @@ _spec.loader.exec_module(example)
 PREFIX = "TEST:ZEBRA:"
 
 
+def _is_analogue(name: str) -> bool:
+    """True if the IOC serves this register as an ao, which carries the
+    full 32 bit range rather than a signed int32."""
+    from zebra_ioc.registers import REGISTERS_32BIT_BY_NAME
+
+    return name in REGISTERS_32BIT_BY_NAME
+
+
 class FakeChannelAccess:
     """caget and caput backed by a ZebraDevice instead of a CA server."""
 

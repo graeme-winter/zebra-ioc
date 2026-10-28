@@ -5,11 +5,32 @@ whole exercise is that the PV names match the legacy Diamond driver, so that
 is what is asserted hardest here.
 """
 
+import pathlib
+
 import pytest
 from softioc import builder
 
 from zebra_ioc.device import ZebraDevice
 from zebra_ioc.ioc import ZebraIOC
+
+
+@pytest.fixture
+def record_types():
+    """Map PV name (prefix stripped) to its EPICS record type."""
+    import re
+
+    from softioc import builder as b
+
+    b.ClearRecords()
+    b.SetDeviceName("TEST:ZEBRA")
+    ZebraIOC(ZebraDevice("sim://test", capture_points=100))
+    b.WriteRecords("/tmp/zebra_ioc_test.db")
+    db = pathlib.Path("/tmp/zebra_ioc_test.db").read_text()
+    b.ClearRecords()
+    return {
+        m.group(2).removeprefix("TEST:ZEBRA:"): m.group(1)
+        for m in re.finditer(r'record\((\w+),\s*"([^"]+)"\)', db)
+    }
 
 
 @pytest.fixture
@@ -123,3 +144,34 @@ class TestRecordShapes:
 
     def test_capture_status_pvs(self, pv_names):
         assert {"PC_NUM_DOWN", "PC_CAPTURE_MAX", "PC_OVERFLOW"} <= pv_names
+
+
+class TestRecordTypesCoverTheRegisterRange:
+    """EPICS LONG is a signed int32, which is narrower than some registers."""
+
+    @pytest.mark.parametrize(
+        "pv", ["DIV1_DIV", "DIV4_DIV", "PC_GATE_START", "PC_PULSE_STEP"]
+    )
+    def test_32bit_registers_are_analogue(self, record_types, pv):
+        """DIV<n>_DIV goes to 4294967295, which a longout cannot carry.
+
+        A caput of 0xFFFFFFFF to a longout fails outright with an overflow,
+        so counting configurations that set the divisor high enough never to
+        wrap could not be written at all.
+        """
+        assert record_types[pv] == "ao"
+        assert record_types[f"{pv}_RBV"] == "ai"
+
+    def test_divider_counters_are_analogue(self, record_types):
+        """Captured divider counts are unsigned 32-bit as well."""
+        for n in range(1, 5):
+            assert record_types[f"PC_DIV{n}_LAST"] == "ai"
+
+    def test_encoder_counters_stay_integer(self, record_types):
+        """Encoder positions are signed 32-bit and fit a longin exactly."""
+        for n in range(1, 5):
+            assert record_types[f"PC_ENC{n}_LAST"] == "longin"
+
+    @pytest.mark.parametrize("pv", ["AND1_ENA", "OUT1_TTL", "PULSE1_WID"])
+    def test_16bit_registers_stay_integer(self, record_types, pv):
+        assert record_types[pv] == "longout"

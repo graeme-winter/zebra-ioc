@@ -26,6 +26,14 @@ _spec.loader.exec_module(example)
 PREFIX = "TEST:ZEBRA:"
 
 
+def _is_analogue(name: str) -> bool:
+    """True if the IOC serves this register as an ao, which carries the
+    full 32 bit range rather than a signed int32."""
+    from zebra_ioc.registers import REGISTERS_32BIT_BY_NAME
+
+    return name in REGISTERS_32BIT_BY_NAME
+
+
 class TestLastValuePvs:
     """The scalar counter PVs, which is what a caget actually reads."""
 
@@ -106,6 +114,14 @@ class FakeChannelAccess:
 
     async def caput(self, pv: str, value, timeout: float = 5.0, **kwargs):
         name = pv[len(PREFIX) :]
+        # Channel Access carries integers as a signed int32. Reject anything
+        # that would not survive the wire, so a test cannot pass on a value
+        # a real caput would refuse
+        if isinstance(value, int) and not -(2**31) <= value < 2**31:
+            if not _is_analogue(name):
+                raise OverflowError(
+                    f"{value} out of bounds for int32 ({name})"
+                )
         self.puts.append((name, int(value)))
         await self.device.write_register(name, int(value))
 

@@ -49,7 +49,8 @@ interface follows from `registers.py`:
 
 | Register type | Records |
 |---|---|
-| Read-write (16 or 32 bit) | `<NAME>` longout, `<NAME>_RBV` longin |
+| Read-write, 16 bit | `<NAME>` longout, `<NAME>_RBV` longin |
+| Read-write, 32 bit | `<NAME>` ao, `<NAME>_RBV` ai |
 | Multiplexer (routing) | as above, plus `<NAME>_STR` stringin with the system bus signal name |
 | Read-only | `<NAME>` longin |
 | Command | `<NAME>` action |
@@ -58,7 +59,7 @@ Plus:
 
 - **Capture arrays** - `PC_TIME`, `PC_ENC1`-`PC_ENC4`, `PC_SYS1`-`PC_SYS2`,
   `PC_DIV1`-`PC_DIV4`, with `PC_NUM_DOWN`, `PC_CAPTURE_MAX` and `PC_OVERFLOW`
-- **Latest captured value** - `PC_ENC1_LAST`-`PC_ENC4_LAST` and
+- **Latest captured value** - `PC_ENC1_LAST`-`PC_ENC4_LAST` (longin) and
   `PC_DIV1_LAST`-`PC_DIV4_LAST`, as in the legacy driver. These are updated
   from each point as it arrives rather than from the capture buffer, so they
   keep tracking even once the buffer is full. `PC_DIV<n>_LAST` is how pulse
@@ -116,6 +117,17 @@ Note that the unsigned arrays (`PC_TIME`, `PC_SYS*`, `PC_DIV*`) are `ULONG`,
 which Channel Access has no native type for, so some clients promote them to
 double. The values are correct; the encoders are `LONG` and come back as
 signed integers.
+
+## A note on record types
+
+Channel Access carries integers as a signed int32, which is narrower than
+some of the registers. `DIV<n>_DIV` goes to 4294967295, so a `caput` of
+0xFFFFFFFF to a longout fails outright with an overflow rather than
+truncating. Every 32-bit register is therefore served as ao/ai, as in the
+legacy Diamond driver: a double holds any 32-bit value exactly, signed or
+unsigned. The same applies to `PC_DIV<n>_LAST`, since divider counters are
+unsigned. 16-bit registers and the signed encoder counters stay as
+longout/longin.
 
 ## Time units
 
@@ -217,7 +229,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-211 tests, no hardware needed.
+220 tests, no hardware needed.
 
 ## Documentation
 
