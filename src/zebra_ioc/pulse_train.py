@@ -308,3 +308,114 @@ def one_pulse_per_train_registers(
     }
 
     return settings, achieved
+
+
+def md3_eiger_registers(
+    source: str = "IN1_TTL",
+    run_gate: str = "SOFT_IN1",
+    train_us: float = 500_000.0,
+    width_us: float = 10.0,
+    out: str | Sequence[str] = ("OUT1_TTL", "OUT2_TTL"),
+    counter_block: int = 1,
+    gate_block: int = 1,
+    shape_block: int = 2,
+    logic_block: int = 1,
+    tspre: int = 5,
+) -> tuple[dict[str, int], dict[str, float | str | int]]:
+    """Registers for the inline MD3 to Eiger configuration.
+
+    Swallows all but the first pulse of each train on the way to the
+    detector, timestamps every pulse, and counts them, all bounded by one
+    software run gate. See docs/md3-eiger-inline.md.
+
+    Everything downstream hangs off an AND of the input with the run gate, so
+    the detector pulse, the count and the timestamps cover exactly the same
+    pulses and nothing happens outside a run. The position compare gate
+    cannot do this job: in external trigger mode each pulse captures
+    regardless of the gate.
+
+    Args:
+        source: Bus signal carrying the MD3 pulses
+        run_gate: Bus signal used as the run gate, normally a soft input
+        train_us: Dead time in microseconds, longer than a train and shorter
+            than the gap between the start of consecutive trains
+        width_us: Width of the pulse sent to the detector
+        out: Output register(s) to drive
+        counter_block: DIV block used as the pulse counter, 1-4
+        gate_block: PULSE block used as the dead time, 1-4
+        shape_block: PULSE block used to shape the output, 1-4
+        logic_block: AND block used for the run gate, 1-4
+        tspre: PC_TSPRE value, 5 for 100ns timestamps or 5000 for 100us
+
+    Returns:
+        (settings, achieved) as for the other helpers
+
+    Raises:
+        ValueError: If the request cannot be met
+    """
+    from .registers import SysBus
+
+    if not 1 <= counter_block <= 4:
+        raise ValueError(f"counter_block must be 1-4, got {counter_block}")
+    if not 1 <= logic_block <= 4:
+        raise ValueError(f"logic_block must be 1-4, got {logic_block}")
+    if tspre not in {prescaler for prescaler, _, _ in PRESCALERS}:
+        raise ValueError(f"tspre must be one of 5, 5000, 50000, got {tspre}")
+
+    for name in (source, run_gate):
+        if name not in SysBus.__members__:
+            raise ValueError(f"{name} is not a system bus signal")
+
+    gated = SysBus[f"AND{logic_block}"]
+
+    # The swallow and shape chain, fed from the gated input rather than
+    # straight from the connector
+    settings, achieved = one_pulse_per_train_registers(
+        source=gated.name,
+        train_us=train_us,
+        width_us=width_us,
+        out=out,
+        gate_block=gate_block,
+        shape_block=shape_block,
+    )
+
+    settings.update(
+        {
+            # Run gate: everything downstream sees input AND run gate
+            f"AND{logic_block}_INP1": int(SysBus[source]),
+            f"AND{logic_block}_INP2": int(SysBus[run_gate]),
+            f"AND{logic_block}_ENA": 0b0011,
+            f"AND{logic_block}_INV": 0,
+            # Free running counter on the same gated pulses
+            f"DIV{counter_block}_INP": int(gated),
+            f"DIV{counter_block}_DIV": 0xFFFFFFFF,
+            # Capture a timestamp on every pulse, with the counter alongside
+            "PC_ARM_SEL": 0,
+            "PC_GATE_SEL": 2,
+            "PC_GATE_INP": int(SysBus[run_gate]),
+            "PC_GATE_NGATE": 0,
+            "PC_PULSE_SEL": 2,
+            "PC_PULSE_INP": int(gated),
+            "PC_TSPRE": tspre,
+            "PC_BIT_CAP": 1 << (5 + counter_block),
+        }
+    )
+
+    tick_us = next(t for p, _, t in PRESCALERS if p == tspre)
+    achieved.update(
+        {
+            "source": source,
+            "run_gate": run_gate,
+            "counter_pv": f"PC_DIV{counter_block}_LAST",
+            "timestamp_tick_us": tick_us,
+            "timestamp_wrap_s": 2**32 * tick_us / 1e6,
+            "chain": (
+                f"{source} AND {run_gate} -> AND{logic_block} -> "
+                f"PULSE{gate_block} (dead {achieved['dead_time_us'] / 1000:g}ms)"
+                f" -> PULSE{shape_block} ({achieved['width_us']:g}us) -> "
+                + ", ".join(achieved["outputs"])
+            ),
+        }
+    )
+
+    return settings, achieved

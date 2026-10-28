@@ -229,7 +229,15 @@ pip install -e '.[dev]'
 pytest
 ```
 
-225 tests, no hardware needed.
+247 tests, no hardware needed.
+
+## Beamline configurations
+
+- [docs/md3-eiger-inline.md](docs/md3-eiger-inline.md) - the Zebra inline
+  between an MD3 and an Eiger: swallowing pulses on the way to the detector,
+  timestamping every pulse, and counting them, between a setup and teardown.
+  Wiring diagrams, register table and procedure. Implemented by
+  `examples/09_md3_eiger.py`.
 
 ## Documentation
 

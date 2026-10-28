@@ -173,6 +173,25 @@ That is documented retrigger behaviour, not a fault, but it means
 SYS_STATERR stays lit until SYS_RESET and is no longer a useful health
 indicator for those blocks.
 
+## 09_md3_eiger.py - the Zebra inline between the MD3 and the Eiger
+
+Swallows all but the first pulse of each train on the way to the detector,
+timestamps every pulse, and counts them, bounded by an explicit setup and
+teardown.
+
+```bash
+zebra-ioc --port /dev/ttyUSB0 --prefix BENCH:ZEBRA: --capture-points 250000
+
+python examples/09_md3_eiger.py BENCH:ZEBRA: setup --train-ms 500
+python examples/09_md3_eiger.py BENCH:ZEBRA: start
+python examples/09_md3_eiger.py BENCH:ZEBRA: status
+python examples/09_md3_eiger.py BENCH:ZEBRA: stop
+python examples/09_md3_eiger.py BENCH:ZEBRA: results
+```
+
+Wiring diagrams, the full register table and the reasoning are in
+[docs/md3-eiger-inline.md](../docs/md3-eiger-inline.md).
+
 ## 04_ioc_client.py - the same thing over Channel Access
 
 Needs the IOC running in another terminal:
