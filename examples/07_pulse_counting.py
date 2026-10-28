@@ -30,6 +30,9 @@ Two things to know:
 - The counter PV updates when position compare emits a sample, so at the
   default 10 Hz the total lags reality by up to 100ms. Pulses are never
   missed - the DIV counter runs in the FPGA - only the readout is sampled.
+- The capture runs for one gate of 0xFFFFFFFF timestamp ticks, which is 119
+  hours at the 100us tick. After that the capture ends and the counter PV
+  stops updating; run `setup` again. The DIV counter itself keeps counting.
 - `zero` works by resetting the Zebra's state machines, which also resets the
   gate, pulse and quad blocks. On a bench that is what you want. In a running
   system, take a baseline reading and subtract instead.
@@ -181,9 +184,13 @@ async def setup(args) -> int:
         "PC_PULSE_SEL": TIME_TRIGGERED,
         "PC_TSPRE": TSPRE,
         "PC_GATE_START": 0,
-        # 0 means gate forever; a finite count stops the capture when it is
-        # reached, which would silently freeze the counter PV
-        "PC_GATE_NGATE": 0,
+        # One gate, as long as the registers allow. PC_GATE_WID is a 32 bit
+        # register counting PC_TSPRE ticks, so at 100us that is 119 hours.
+        # Leaving it at a 16 bit value gives a 6.5 second gate, after which
+        # the capture ends and the counter PV silently freezes - which looks
+        # like counting that worked and then stopped for no reason.
+        "PC_GATE_NGATE": 1,
+        "PC_GATE_WID": 0xFFFFFFFF,
         "PC_PULSE_START": 0,
         "PC_PULSE_WID": 1,
         "PC_BIT_CAP": 1 << (5 + block),

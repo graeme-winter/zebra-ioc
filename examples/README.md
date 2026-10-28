@@ -110,6 +110,11 @@ where, and how often the total is republished.
 Pulses are never missed - the counter runs in the FPGA - but the readout is
 sampled, so the PV lags by up to one sample interval (100 ms by default).
 
+The capture runs for a single gate of 0xFFFFFFFF timestamp ticks, 119 hours
+at the 100 us tick. When it ends the counter PV stops updating, so counting
+that works and then stops dead after a fixed interval means the gate expired
+rather than the signal going away.
+
 `zero` uses SYS_RESET, which also resets the gate, pulse and quad blocks and
 disarms position compare. That is fine on a bench; in a running system take a
 baseline reading and subtract instead.

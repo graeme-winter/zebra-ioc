@@ -231,11 +231,19 @@ class TestBlockCollision:
 
 
 class TestGating:
-    async def test_gates_forever(self, ca):
-        """A finite gate count stops the capture when reached, which would
-        silently freeze the counter PV partway through a measurement."""
+    async def test_gate_is_opened_for_as_long_as_possible(self, ca):
+        """A 16 bit gate width gives 6.5s at the 100us tick, after which the
+        capture ends and the counter freezes with no error anywhere. The
+        register is 32 bit, which is 119 hours."""
         await example.main(args("setup"))
-        assert await ca.device.read_register("PC_GATE_NGATE") == 0
+        assert await ca.device.read_register("PC_GATE_WID") == 0xFFFFFFFF
+        assert await ca.device.read_register("PC_GATE_NGATE") == 1
+
+    async def test_gate_width_survives_the_wire(self, ca):
+        """0xFFFFFFFF only reaches the hardware because PC_GATE_WID is served
+        as an ao; a longout would reject it outright."""
+        await example.main(args("setup"))
+        assert ("PC_GATE_WID", 0xFFFFFFFF) in ca.puts
 
 
 class TestZeroAndRead:
