@@ -193,6 +193,51 @@ class TestSetup:
         assert ca.puts == []
 
 
+class TestBlockCollision:
+    """DIV blocks are a shared resource and there are only four."""
+
+    async def test_refuses_a_block_already_feeding_a_pulse_generator(self, ca):
+        """This is exactly what breaks after running example 5 or 6, which
+        use DIV1 to generate a pulse train."""
+        await ca.device.configure(
+            {
+                "DIV1_INP": int(SysBus.CLOCK_1MHZ),
+                "PULSE1_INP": int(SysBus.DIV1_OUTD),
+            }
+        )
+        ca.puts.clear()
+
+        assert await example.main(args("setup")) == 1
+        assert ca.puts == []
+
+    async def test_another_block_is_fine(self, ca):
+        await ca.device.configure(
+            {
+                "DIV1_INP": int(SysBus.CLOCK_1MHZ),
+                "PULSE1_INP": int(SysBus.DIV1_OUTD),
+            }
+        )
+        assert await example.main(args("setup", "--block", "2")) == 0
+        assert await ca.device.read_register("DIV2_DIV") == 0xFFFFFFFF
+        # the pulse train is untouched
+        assert await ca.device.read_register("DIV1_INP") == int(
+            SysBus.CLOCK_1MHZ
+        )
+
+    async def test_force_overrides(self, ca):
+        await ca.device.configure({"PULSE1_INP": int(SysBus.DIV1_OUTD)})
+        assert await example.main(args("setup", "--force")) == 0
+        assert await ca.device.read_register("DIV1_DIV") == 0xFFFFFFFF
+
+
+class TestGating:
+    async def test_gates_forever(self, ca):
+        """A finite gate count stops the capture when reached, which would
+        silently freeze the counter PV partway through a measurement."""
+        await example.main(args("setup"))
+        assert await ca.device.read_register("PC_GATE_NGATE") == 0
+
+
 class TestZeroAndRead:
     async def test_zero_resets_and_rearms(self, ca):
         await example.main(args("setup"))

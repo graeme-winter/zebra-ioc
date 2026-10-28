@@ -90,6 +90,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         help="How often the counter is sampled, in milliseconds",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Use the DIV block even if something else is already using it",
+    )
+    parser.add_argument(
         "--timeout", type=float, default=5.0, help="CA timeout in seconds"
     )
     return parser.parse_args(argv)
@@ -115,6 +120,39 @@ async def check_ioc(prefix: str, timeout: float) -> bool:
     return True
 
 
+async def check_block_free(args) -> bool:
+    """Refuse to repurpose a DIV block that something else is using.
+
+    The Zebra has four of each block and they are a shared resource. Pointing
+    the counter at a DIV block that is already generating a pulse train
+    silently breaks that pulse train - the divisor goes to 4294967295, so its
+    OUTD fires once every four billion edges, which looks exactly like a dead
+    cable.
+    """
+    prefix, block = args.prefix, args.block
+    outd = int(SysBus[f"DIV{block}_OUTD"])
+    outn = int(SysBus[f"DIV{block}_OUTN"])
+
+    users = []
+    for consumer in [f"PULSE{n}_INP" for n in range(1, 5)] + [
+        f"DIV{n}_INP" for n in range(1, 5) if n != block
+    ] + [f"AND{n}_INP{i}" for n in range(1, 5) for i in range(1, 5)]:
+        value = await caget(f"{prefix}{consumer}", timeout=args.timeout)
+        if int(value) in (outd, outn):
+            users.append(consumer)
+
+    if not users:
+        return True
+
+    print(
+        f"error: DIV{block} is already feeding {', '.join(users)}.\n"
+        f"       Using it as a counter would break that. Pick another block "
+        f"with --block, or --force to go ahead anyway.",
+        file=sys.stderr,
+    )
+    return False
+
+
 def counter_pv(prefix: str, block: int) -> str:
     """The PV holding the running total."""
     return f"{prefix}PC_DIV{block}_LAST"
@@ -123,6 +161,9 @@ def counter_pv(prefix: str, block: int) -> str:
 async def setup(args) -> int:
     """Wire the input into a DIV counter and start sampling it."""
     prefix, block = args.prefix, args.block
+
+    if not args.force and not await check_block_free(args):
+        return 1
 
     try:
         source = int(SysBus[args.input])
@@ -140,7 +181,9 @@ async def setup(args) -> int:
         "PC_PULSE_SEL": TIME_TRIGGERED,
         "PC_TSPRE": TSPRE,
         "PC_GATE_START": 0,
-        "PC_GATE_NGATE": 1,
+        # 0 means gate forever; a finite count stops the capture when it is
+        # reached, which would silently freeze the counter PV
+        "PC_GATE_NGATE": 0,
         "PC_PULSE_START": 0,
         "PC_PULSE_WID": 1,
         "PC_BIT_CAP": 1 << (5 + block),
@@ -148,8 +191,6 @@ async def setup(args) -> int:
 
     # PC_PULSE_STEP counts timestamp ticks, not milliseconds
     settings["PC_PULSE_STEP"] = max(1, round(args.sample_ms * 1000 / TICK_US))
-    # One long gate; the capture runs until disarmed
-    settings["PC_GATE_WID"] = 0xFFFF
 
     for name, value in settings.items():
         await caput(f"{prefix}{name}", value, wait=True, timeout=args.timeout)

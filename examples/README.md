@@ -114,16 +114,26 @@ sampled, so the PV lags by up to one sample interval (100 ms by default).
 disarms position compare. That is fine on a bench; in a running system take a
 baseline reading and subtract instead.
 
+### Blocks are a shared resource
+
+There are four of each block, and nothing stops two configurations fighting
+over one. Examples 5 and 6 generate their pulse train with DIV1; counting
+with `--block 1` would repurpose it, setting the divisor to 4294967295 so its
+OUTD fires once every four billion edges. The pulse train stops, and it looks
+exactly like a dead cable. `setup` refuses to take a DIV block that something
+else is already feeding; `--force` overrides.
+
 ### Self test
 
-Count the Zebra's own pulse train, so the answer is known:
+Count the Zebra's own pulse train, so the answer is known. Note the counter
+uses a different DIV block from the generator:
 
 ```bash
 # patch OUT1 TTL to IN1 TTL with a BNC lead, then
-python examples/05_square_wave.py $PORT --freq 1000 --width-us 100
-python examples/07_pulse_counting.py BENCH:ZEBRA: setup
-python examples/07_pulse_counting.py BENCH:ZEBRA: zero
-python examples/07_pulse_counting.py BENCH:ZEBRA: watch   # +1000 per second
+python examples/06_square_wave_epics.py BENCH:ZEBRA: --freq 1000 --width-us 100
+python examples/07_pulse_counting.py BENCH:ZEBRA: setup --block 2
+python examples/07_pulse_counting.py BENCH:ZEBRA: zero --block 2
+python examples/07_pulse_counting.py BENCH:ZEBRA: watch --block 2  # +1000/s
 ```
 
 ## 08_one_per_train.py - one short pulse per train of pulses
